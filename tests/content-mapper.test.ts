@@ -6,6 +6,10 @@ import * as Stream from "effect/Stream"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
+import * as Migrator from "effect/sql/Migrator"
+import { SqlClient } from "effect/sql/SqlClient"
+import { runMigrationsWithSnapshot } from "effect-silt/migrations"
 
 const compilerProject = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
@@ -113,4 +117,42 @@ it.live("reports missing project configuration through SQL diagnostics", () =>
     expect(result.status).not.toBe(0)
     expect(result.output).toContain("Cannot read schema file")
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+)
+
+it.live("updates SQL import inference from regenerated migration snapshots", () =>
+  Effect.gen(function* () {
+    const { directory, fs, path, typecheck } = yield* compilerProject
+    const sql = yield* SqlClient
+    const first = Migrator.fromRecord({
+      "0001_create_users": sql
+        .unsafe("CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL)")
+        .pipe(Effect.asVoid),
+    })
+    const snapshotPath = path.join(directory, "schema.sql")
+    yield* runMigrationsWithSnapshot({ loader: first, snapshotPath })
+    expect((yield* typecheck()).status).toBe(0)
+    yield* fs.writeFileString(
+      path.join(directory, "main.ts"),
+      'import find from "./find.sql"; find({ id: "wrong" });\n',
+    )
+    const invalid = yield* typecheck()
+    expect(invalid.status).not.toBe(0)
+    expect(invalid.output).toContain("TS2322")
+    yield* fs.writeFileString(
+      path.join(directory, "main.ts"),
+      'import find from "./find.sql"; find({ id: 1 });\n',
+    )
+    const second = Migrator.fromRecord({
+      "0002_drop_name": sql.unsafe("ALTER TABLE users DROP COLUMN name").pipe(Effect.asVoid),
+    })
+    yield* runMigrationsWithSnapshot({ loader: second, snapshotPath })
+    const changed = yield* typecheck()
+    expect(changed.status).not.toBe(0)
+    expect(changed.output).toContain("find.sql")
+    expect(changed.output).toContain("name")
+    expect(changed.output).toContain("silt")
+  }).pipe(
+    Effect.scoped,
+    Effect.provide([SqliteClient.layer({ filename: ":memory:" }), NodeServices.layer]),
+  ),
 )

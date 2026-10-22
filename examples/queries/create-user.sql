@@ -1,3 +1,3 @@
-INSERT INTO users (name, email)
-VALUES (:name, :email)
+INSERT INTO users (name, email, password)
+VALUES (:name, :email, :password)
 RETURNING id, name, email;

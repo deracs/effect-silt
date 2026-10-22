@@ -74,7 +74,7 @@ In the consumer project, install the archive and the Effect SQLite driver:
 
 ```sh
 pnpm add /absolute/path/to/effect-silt/effect-silt-0.1.0.tgz effect@4.0.5 @effect/sql-sqlite-node@4.0.5
-pnpm add -D typescript@7.1.0-dev.20261020.3
+pnpm add -D typescript@7.1.0-dev.20261020.3 @types/node@24
 ```
 
 The archive filename includes the version from `package.json`.
@@ -117,6 +117,8 @@ Add the content mapper to `tsconfig.json`:
     "target": "ES2024",
     "module": "NodeNext",
     "moduleResolution": "NodeNext",
+    "rewriteRelativeImportExtensions": true,
+    "types": ["node"],
     "strict": true
   },
   "contentMappers": [{ "package": "effect-silt", "extensions": [".sql"] }]
@@ -163,6 +165,96 @@ node --import effect-silt/register main.ts
 ```
 
 The preload installs an asynchronous Node loader that compiles SQL imports through Effect's filesystem and path services.
+
+## Generate the schema from migrations
+
+Silt can derive `schema.sql` from your Effect SQL migrations.
+The `.sql` imports, content mapper configuration, and query API remain the same.
+Manual schema files also remain supported.
+
+Define an Effect SQL migration loader in `migrations.ts`:
+
+```ts
+import * as Effect from "effect/Effect"
+import * as Migrator from "effect/sql/Migrator"
+import { SqlClient } from "effect/sql/SqlClient"
+
+export const migrations = Migrator.fromRecord({
+  "0001_create_users": Effect.gen(function* () {
+    const sql = yield* SqlClient
+    yield* sql`CREATE TABLE users (
+      id INTEGER PRIMARY KEY,
+      name TEXT NOT NULL,
+      email TEXT UNIQUE
+    )`
+  }),
+})
+```
+
+Create `snapshot.ts` to apply these migrations to a fresh in-memory database:
+
+```ts
+import * as Effect from "effect/Effect"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
+import { runMigrationsWithSnapshot } from "effect-silt/migrations"
+import { migrations } from "./migrations.ts"
+
+await Effect.runPromise(
+  runMigrationsWithSnapshot({
+    loader: migrations,
+    snapshotPath: "schema.sql",
+  }).pipe(Effect.provide([SqliteClient.layer({ filename: ":memory:" }), NodeServices.layer])),
+)
+```
+
+Run the script from the consumer project root:
+
+```sh
+node snapshot.ts
+```
+
+Keep `silt.config.json` pointed at the generated file:
+
+```json
+{ "dialect": "sqlite", "schema": "schema.sql" }
+```
+
+Regenerate the snapshot after a migration change. Commit the snapshot with the migrations.
+The analyzer reads the saved snapshot. It does not execute migrations during compilation or module imports.
+The mapper and Vite plugin watch the snapshot file for changes.
+
+At runtime, apply the same migration loader before the first query:
+
+```ts
+const program = Effect.gen(function* () {
+  yield* Migrator.make({})({ loader: migrations })
+  return yield* findUser({ id: 1 })
+})
+```
+
+The snapshot contains final SQLite table definitions, indexes, views, and triggers.
+It preserves keys, constraints, defaults, and declared column types for inference.
+It excludes stored rows, SQLite internal objects, and the migration history table.
+Virtual tables and their shadow tables are unsupported.
+
+The helper accepts an optional `table` field for a custom migration history table.
+Use the same table name in snapshot generation and runtime migrations.
+The helper returns the migration tuples from Effect's migrator.
+Every successful call refreshes the snapshot, even when no new migrations exist.
+
+Snapshot replacement is atomic. A migration failure leaves the previous snapshot intact.
+Migrations commit before the snapshot export.
+Call the helper outside an application transaction.
+If export fails, the helper returns a typed `SchemaSnapshotError`.
+Correct the output path or filesystem problem, then rerun the script to refresh the snapshot.
+
+In this repository, [`examples/migrations.ts`](./examples/migrations.ts) supplies the runtime schema and the snapshot.
+Regenerate the example snapshot with:
+
+```sh
+pnpm schema:snapshot
+```
 
 ## Vite and Vitest
 

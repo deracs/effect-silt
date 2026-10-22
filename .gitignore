@@ -6,6 +6,7 @@ coverage/
 *.db-wal
 .DS_Store
 .silt-test-*/
+.silt-snapshot-*/
 
 # Local package archives and credentials
 *.tgz

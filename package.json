@@ -42,6 +42,10 @@
     "./compiler": {
       "types": "./dist/sql-analyzer.d.ts",
       "default": "./dist/sql-analyzer.js"
+    },
+    "./migrations": {
+      "types": "./dist/schema-snapshot.d.ts",
+      "default": "./dist/schema-snapshot.js"
     }
   },
   "scripts": {
@@ -49,6 +53,7 @@
     "build": "tsc -p tsconfig.build.json",
     "test": "pnpm build && vitest run",
     "example": "node --import effect-silt/register examples/main.ts",
+    "schema:snapshot": "pnpm build && node examples/snapshot.ts",
     "verify": "pnpm format:check && pnpm check && pnpm lint && vitest run && pnpm example",
     "lint": "oxlint .",
     "lint:fix": "oxlint --fix .",

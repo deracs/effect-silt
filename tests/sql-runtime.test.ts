@@ -3,12 +3,10 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Deferred from "effect/Deferred"
 import * as Fiber from "effect/Fiber"
-import * as FileSystem from "effect/FileSystem"
-import * as Path from "effect/Path"
-import * as NodeServices from "@effect/platform-node/NodeServices"
-import * as Layer from "effect/Layer"
 import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
 import { SqlClient } from "effect/sql/SqlClient"
+import * as Migrator from "effect/sql/Migrator"
+import { migrations } from "../examples/migrations.ts"
 import createUser from "../examples/queries/create-user.sql"
 import findUser from "../examples/queries/find-user.sql"
 import listUsers from "../examples/queries/list-users.sql"
@@ -18,28 +16,19 @@ import renameUser from "../examples/queries/rename-user.sql"
 import createPayload from "../examples/queries/create-payload.sql"
 import prototypeColumn from "../examples/queries/prototype-column.sql"
 
-const database = Layer.mergeAll(
-  NodeServices.layer,
-  SqliteClient.layer({
-    filename: ":memory:",
-    transformResultNames: (name) => name.toUpperCase(),
-  }),
-)
+const database = SqliteClient.layer({
+  filename: ":memory:",
+  transformResultNames: (name) => name.toUpperCase(),
+})
 const initializeDatabase = Effect.gen(function* () {
-  const sql = yield* SqlClient
-  const fs = yield* FileSystem.FileSystem
-  const path = yield* Path.Path
-  const schemaPath = yield* path.fromFileUrl(new URL("../examples/schema.sql", import.meta.url))
-  const schema = yield* fs.readFileString(schemaPath)
-  for (const statement of schema.split(";").filter((part) => part.trim()))
-    yield* sql.unsafe(statement)
-  return sql
+  yield* Migrator.make({})({ loader: migrations })
+  return yield* SqlClient
 })
 
 it.effect("runs imported queries lazily, decodes values, and supports parameterless queries", () =>
   Effect.gen(function* () {
     yield* initializeDatabase
-    const insert = createUser({ name: "Ada", email: null })
+    const insert = createUser({ name: "Ada", email: null, password: "test-password" })
     expect(yield* countUsers()).toEqual({ total: 0 })
     expect(yield* insert).toEqual([{ id: 1, name: "Ada", email: null }])
     expect(yield* findUser({ id: 1 })).toEqual(
@@ -57,7 +46,7 @@ it.effect("rolls back imported writes on a typed failure", () =>
     const result = yield* sql
       .withTransaction(
         Effect.gen(function* () {
-          yield* createUser({ name: "Ada", email: null })
+          yield* createUser({ name: "Ada", email: null, password: "test-password" })
           return yield* Effect.fail("cancelled" as const)
         }),
       )
@@ -72,11 +61,11 @@ it.effect("keeps nested transactions on their savepoint connection", () =>
     const sql = yield* initializeDatabase
     yield* sql.withTransaction(
       Effect.gen(function* () {
-        yield* createUser({ name: "outer", email: null })
+        yield* createUser({ name: "outer", email: null, password: "test-password" })
         yield* sql
           .withTransaction(
             Effect.gen(function* () {
-              yield* createUser({ name: "inner", email: null })
+              yield* createUser({ name: "inner", email: null, password: "test-password" })
               return yield* Effect.fail("rollback inner")
             }),
           )
@@ -94,7 +83,7 @@ it.effect("rolls back an interrupted transaction and releases its connection", (
     const fiber = yield* sql
       .withTransaction(
         Effect.gen(function* () {
-          yield* createUser({ name: "interrupted", email: null })
+          yield* createUser({ name: "interrupted", email: null, password: "test-password" })
           yield* Deferred.succeed(inserted, undefined)
           return yield* Effect.never
         }),
@@ -109,12 +98,16 @@ it.effect("rolls back an interrupted transaction and releases its connection", (
 it.effect("preserves database constraint failures in the SqlError channel", () =>
   Effect.gen(function* () {
     const sql = yield* initializeDatabase
-    yield* createUser({ name: "existing", email: "same@example.com" })
+    yield* createUser({ name: "existing", email: "same@example.com", password: "test-password" })
     const error = yield* sql
       .withTransaction(
         Effect.gen(function* () {
-          yield* createUser({ name: "rolled back", email: null })
-          yield* createUser({ name: "duplicate", email: "same@example.com" })
+          yield* createUser({ name: "rolled back", email: null, password: "test-password" })
+          yield* createUser({
+            name: "duplicate",
+            email: "same@example.com",
+            password: "test-password",
+          })
         }),
       )
       .pipe(Effect.flip)
@@ -136,7 +129,7 @@ it.effect("checks JavaScript callers before executing a statement", () =>
 it.effect("decodes nullable LEFT JOIN columns", () =>
   Effect.gen(function* () {
     const sql = yield* initializeDatabase
-    yield* createUser({ name: "Ada", email: null })
+    yield* createUser({ name: "Ada", email: null, password: "test-password" })
     expect(yield* userPosts({ id: 1 })).toEqual([{ id: 1, name: "Ada", title: null }])
     yield* sql.unsafe("INSERT INTO posts (user_id, title) VALUES (?, ?)", [1, "Notes"])
     expect(yield* userPosts({ id: 1 })).toEqual([{ id: 1, name: "Ada", title: "Notes" }])
@@ -146,10 +139,10 @@ it.effect("decodes nullable LEFT JOIN columns", () =>
 it.effect("preserves BIGINT precision and rejects invalid stored booleans", () =>
   Effect.gen(function* () {
     const sql = yield* initializeDatabase
-    yield* sql.unsafe("INSERT INTO users(name, external_id) VALUES (?, ?)", [
-      "Ada",
-      9007199254740993n,
-    ])
+    yield* sql.unsafe(
+      "INSERT INTO users(name, external_id, password) VALUES (?, ?, 'test-password')",
+      ["Ada", 9007199254740993n],
+    )
     const user = yield* findUser({ id: 1 })
     expect(Option.getOrThrow(user).external_id).toBe(9007199254740993n)
     yield* sql.unsafe("UPDATE users SET active = 2 WHERE id = 1")
@@ -182,7 +175,7 @@ it.effect("round trips JSON and binary SQL parameters through the inferred codec
 it.effect("rejects INTEGER results beyond the safe number range", () =>
   Effect.gen(function* () {
     const sql = yield* initializeDatabase
-    yield* sql.unsafe("INSERT INTO users (id, name) VALUES (?, ?)", [
+    yield* sql.unsafe("INSERT INTO users (id, name, password) VALUES (?, ?, 'test-password')", [
       9007199254740993n,
       "large integer",
     ])
