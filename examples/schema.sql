@@ -1,0 +1,19 @@
+CREATE TABLE users (
+  id INTEGER PRIMARY KEY,
+  name TEXT NOT NULL,
+  email TEXT UNIQUE,
+  active BOOLEAN NOT NULL DEFAULT 1,
+  external_id BIGINT NOT NULL DEFAULT 0
+);
+
+CREATE TABLE posts (
+  id INTEGER PRIMARY KEY,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  title TEXT NOT NULL
+);
+
+CREATE TABLE payloads (
+  id INTEGER PRIMARY KEY,
+  body JSON NOT NULL,
+  data BLOB NOT NULL
+);

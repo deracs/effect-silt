@@ -1,0 +1,47 @@
+{
+  "languages": {
+    "TypeScript": {
+      "language_servers": ["typescript-ls", "oxlint", "oxfmt"],
+      "formatter": [{ "language_server": { "name": "oxfmt" } }],
+      "format_on_save": "on"
+    },
+    "TSX": {
+      "language_servers": ["typescript-ls", "oxlint", "oxfmt"],
+      "formatter": [{ "language_server": { "name": "oxfmt" } }],
+      "format_on_save": "on"
+    },
+    "JavaScript": {
+      "language_servers": ["typescript-ls", "oxlint", "oxfmt"],
+      "formatter": [{ "language_server": { "name": "oxfmt" } }],
+      "format_on_save": "on"
+    },
+    "JSX": {
+      "language_servers": ["typescript-ls", "oxlint", "oxfmt"],
+      "formatter": [{ "language_server": { "name": "oxfmt" } }],
+      "format_on_save": "on"
+    }
+  },
+  "lsp": {
+    "typescript-ls": {
+      "binary": {
+        "path": "./node_modules/.bin/tsc",
+        "arguments": ["--lsp", "--stdio"]
+      },
+      "initialization_options": {
+        "runExternalCode": true
+      }
+    },
+    "oxlint": {
+      "binary": {
+        "path": "./node_modules/.bin/oxlint",
+        "arguments": ["--lsp"]
+      }
+    },
+    "oxfmt": {
+      "binary": {
+        "path": "./node_modules/.bin/oxfmt",
+        "arguments": ["--lsp"]
+      }
+    }
+  }
+}

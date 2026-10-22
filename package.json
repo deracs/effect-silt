@@ -1,0 +1,103 @@
+{
+  "name": "effect-silt",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Import SQL files as inferred, Effect-native queries.",
+  "keywords": [
+    "content-mapper",
+    "effect",
+    "sql",
+    "sqlite",
+    "typescript"
+  ],
+  "homepage": "https://github.com/deracs/effect-silt#readme",
+  "bugs": {
+    "url": "https://github.com/deracs/effect-silt/issues"
+  },
+  "license": "MIT",
+  "author": "Michael Goldsmith",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/deracs/effect-silt.git"
+  },
+  "files": [
+    "dist",
+    "src",
+    "!src/**/*.test.ts",
+    "LICENSE",
+    "README.md",
+    "docs/RELEASING.md",
+    "AGENTS.md"
+  ],
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./register": "./dist/register.js",
+    "./vite": {
+      "types": "./dist/vite-plugin.d.ts",
+      "default": "./dist/vite-plugin.js"
+    },
+    "./compiler": {
+      "types": "./dist/sql-analyzer.d.ts",
+      "default": "./dist/sql-analyzer.js"
+    }
+  },
+  "scripts": {
+    "check": "pnpm build && tsc --noEmit --runExternalCode",
+    "build": "tsc -p tsconfig.build.json",
+    "test": "pnpm build && vitest run",
+    "example": "node --import effect-silt/register examples/main.ts",
+    "verify": "pnpm format:check && pnpm check && pnpm lint && vitest run && pnpm example",
+    "lint": "oxlint .",
+    "lint:fix": "oxlint --fix .",
+    "format": "oxfmt --write .",
+    "format:check": "oxfmt --check .",
+    "prepack": "pnpm build",
+    "prepare": "effect-tsgo patch --typescript --oxlint"
+  },
+  "dependencies": {
+    "@effect/platform-node": "4.0.5",
+    "node-sql-parser": "5.4.0"
+  },
+  "devDependencies": {
+    "@effect/sql-sqlite-node": "4.0.5",
+    "@effect/tsgo": "0.56.0",
+    "@effect/vitest": "4.0.5",
+    "@types/node": "26.6.5",
+    "effect": "4.0.5",
+    "effect-silt": "link:",
+    "oxfmt": "0.74.0",
+    "oxlint": "1.89.0",
+    "oxlint-tsgolint": "7.0.2004",
+    "typescript": "7.1.0-dev.20261020.3",
+    "vite": "8.3.5",
+    "vitest": "5.0.5"
+  },
+  "peerDependencies": {
+    "effect": "^4.0.5",
+    "vite": ">=7"
+  },
+  "peerDependenciesMeta": {
+    "vite": {
+      "optional": true
+    }
+  },
+  "typescript": {
+    "contentMapper": {
+      "compilerOptions": [],
+      "dynamicConfig": true,
+      "exec": [
+        "node",
+        "--disable-warning=ExperimentalWarning",
+        "dist/content-mapper.js"
+      ]
+    }
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.34.0"
+}

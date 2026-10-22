@@ -1,0 +1,14 @@
+node_modules/
+dist/
+coverage/
+*.db
+*.db-shm
+*.db-wal
+.DS_Store
+.silt-test-*/
+
+# Local package archives and credentials
+*.tgz
+.env
+.env.*
+!.env.example

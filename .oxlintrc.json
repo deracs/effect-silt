@@ -1,0 +1,47 @@
+{
+  "$schema": "./node_modules/@effect/tsgo/oxlint-schema.json",
+  "extends": ["./node_modules/@effect/tsgo/oxlint-presets/recommended.json"],
+  "rules": {
+    "eslint/no-restricted-imports": [
+      "error",
+      {
+        "paths": [
+          { "name": "node:fs", "message": "Use effect/FileSystem. See AGENTS.md." },
+          { "name": "node:fs/promises", "message": "Use effect/FileSystem. See AGENTS.md." },
+          { "name": "fs", "message": "Use effect/FileSystem. See AGENTS.md." },
+          { "name": "fs/promises", "message": "Use effect/FileSystem. See AGENTS.md." },
+          { "name": "node:path", "message": "Use effect/Path. See AGENTS.md." },
+          { "name": "node:path/posix", "message": "Use effect/Path. See AGENTS.md." },
+          { "name": "node:path/win32", "message": "Use effect/Path. See AGENTS.md." },
+          { "name": "path", "message": "Use effect/Path. See AGENTS.md." },
+          { "name": "path/posix", "message": "Use effect/Path. See AGENTS.md." },
+          { "name": "path/win32", "message": "Use effect/Path. See AGENTS.md." },
+          { "name": "node:crypto", "message": "Use effect/Crypto. See AGENTS.md." },
+          { "name": "crypto", "message": "Use effect/Crypto. See AGENTS.md." },
+          { "name": "node:child_process", "message": "Use effect/process. See AGENTS.md." },
+          { "name": "child_process", "message": "Use effect/process. See AGENTS.md." }
+        ]
+      }
+    ],
+    "eslint/no-unused-vars": "error",
+    "typescript/no-explicit-any": "error",
+    "typescript/no-non-null-assertion": "error",
+    // SqlField is a plain schema-derived record, not a class instance.
+    "typescript/no-misused-spread": [
+      "error",
+      {
+        "allow": [{ "from": "file", "name": "SqlField", "path": "src/query-contract.ts" }]
+      }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["examples/main.ts", "tests/sql-runtime.test.ts", "tests/query-inference.ts"],
+      "rules": {
+        // Oxlint's type engine cannot run SQL content mappers. The real compiler checks these callers.
+        "effecttsgo/any-unknown-in-error-context": "off"
+      }
+    }
+  ],
+  "ignorePatterns": ["dist/**", "coverage/**", ".silt-test-*/**"]
+}

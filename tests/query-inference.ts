@@ -1,0 +1,46 @@
+import { expectTypeOf } from "vitest"
+import type * as Effect from "effect/Effect"
+import type * as Option from "effect/Option"
+import type { SqlClient } from "effect/sql/SqlClient"
+import type { SqlQueryError } from "effect-silt"
+import findUser from "../examples/queries/find-user.sql"
+import createUser from "../examples/queries/create-user.sql"
+import listUsers from "../examples/queries/list-users.sql"
+import countUsers from "../examples/queries/count-users.sql"
+import userPosts from "../examples/queries/user-posts.sql"
+import renameUser from "../examples/queries/rename-user.sql"
+
+const found = findUser({ id: 1 })
+expectTypeOf<Effect.Success<typeof found>>().toEqualTypeOf<
+  Option.Option<{
+    readonly id: number
+    readonly name: string
+    readonly email: string | null
+    readonly active: boolean
+    readonly external_id: bigint
+  }>
+>()
+expectTypeOf<Effect.Services<typeof found>>().toEqualTypeOf<SqlClient>()
+expectTypeOf<Effect.Error<typeof found>>().toEqualTypeOf<SqlQueryError>()
+expectTypeOf<Effect.Success<ReturnType<typeof createUser>>>().toEqualTypeOf<
+  ReadonlyArray<{ readonly id: number; readonly name: string; readonly email: string | null }>
+>()
+expectTypeOf<Effect.Success<ReturnType<typeof listUsers>>>().toEqualTypeOf<
+  ReadonlyArray<{ readonly id: number; readonly name: string; readonly email: string | null }>
+>()
+expectTypeOf<Effect.Success<ReturnType<typeof countUsers>>>().toEqualTypeOf<{
+  readonly total: number
+}>()
+expectTypeOf<Effect.Success<ReturnType<typeof userPosts>>>().toEqualTypeOf<
+  ReadonlyArray<{ readonly id: number; readonly name: string; readonly title: string | null }>
+>()
+expectTypeOf<Effect.Success<ReturnType<typeof renameUser>>>().toEqualTypeOf<void>()
+
+// @ts-expect-error -- SQL infers an INTEGER parameter, so strings must fail type checking.
+findUser({ id: "1" })
+// @ts-expect-error -- Queries with parameters cannot be called without them.
+findUser()
+// @ts-expect-error -- NOT NULL constrains the INSERT name parameter.
+createUser({ name: null, email: null })
+// @ts-expect-error -- Nullable values are accepted, but required SQL parameters cannot be omitted.
+createUser({ name: "Ada" })
