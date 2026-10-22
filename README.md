@@ -315,12 +315,6 @@ Use the SQLite, compiler, and runtime fixtures where possible.
 Report bugs through [GitHub issues](https://github.com/deracs/effect-silt/issues).
 Include the SQL, schema, compiler version, and expected result.
 
-## Public release preparation
-
-The project is not ready for a public npm release.
-The package manifest currently sets `private: true` to prevent accidental publication.
-[The release checklist](./docs/RELEASING.md) covers package metadata, archive checks, and the first npm release.
-
 ## License and acknowledgments
 
 [MIT](./LICENSE) © Michael Goldsmith.
