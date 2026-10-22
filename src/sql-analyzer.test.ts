@@ -2,6 +2,7 @@ import { expect, it, prop } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { analyzeSqlQuery } from "./sql-analyzer.ts"
+import { emitSqlDeclaration } from "./sql-module.ts"
 
 const schema = `
 CREATE TABLE users (id INTEGER PRIMARY KEY, name TEXT NOT NULL, email TEXT UNIQUE);
@@ -12,6 +13,54 @@ CREATE TABLE descending_pk (id INTEGER PRIMARY KEY DESC);
 `
 const analyze = (sql: string, overrideSchema = schema) =>
   analyzeSqlQuery({ sql, schema: overrideSchema, source: "test.sql" })
+
+it.effect("infers row arrays from explicit INSERT columns and keeps hover fields inline", () =>
+  Effect.gen(function* () {
+    const definition = yield* analyze(
+      'insert into users ("email", "name") values /* ? :ignored[] */ :users[] returning id, name, email;',
+    )
+    expect(definition.bindings).toEqual(["users"])
+    expect(definition.parameters).toEqual([
+      {
+        name: "users",
+        kind: "rows",
+        start: definition.sql.indexOf("(?, ?)"),
+        end: definition.sql.indexOf("(?, ?)") + 6,
+        fields: [
+          { name: "email", kind: "text", nullable: true },
+          { name: "name", kind: "text", nullable: false },
+        ],
+      },
+    ])
+    expect(definition.cardinality).toBe("many")
+    expect(definition.columns).toEqual([
+      { name: "id", kind: "integer", nullable: false },
+      { name: "name", kind: "text", nullable: false },
+      { name: "email", kind: "text", nullable: true },
+    ])
+    expect(emitSqlDeclaration(definition)).toContain(
+      'readonly "users": ReadonlyArray<{ readonly "email": string | null; readonly "name": string }>',
+    )
+  }),
+)
+
+it.effect.each([
+  "SELECT id FROM users WHERE id IN (:ids[])",
+  "UPDATE users SET name=:users[]",
+  "INSERT INTO users VALUES :users[]",
+  "INSERT INTO users (name) VALUES (:users[])",
+  "INSERT INTO users (name) VALUES :users[], (:name)",
+  "INSERT INTO users (name) VALUES (:name), :users[]",
+  "INSERT INTO users (name) VALUES :users[], :other[]",
+  "INSERT INTO users (name) VALUES :users[] RETURNING CAST(:users AS TEXT) AS value",
+  "INSERT INTO users (name, name) VALUES :users[]",
+  "INSERT INTO users (missing) VALUES :users[]",
+])("reports unsupported row array positions as SQL diagnostics: %s", (sql) =>
+  Effect.gen(function* () {
+    const error = yield* analyze(sql).pipe(Effect.flip)
+    expect(error._tag).toBe("SqlAnalysisError")
+  }),
+)
 
 it.effect("proves a composite unique lookup only when every key has an equality constraint", () =>
   Effect.gen(function* () {
@@ -106,9 +155,28 @@ prop(
   ([input]) => {
     const quoted = input.replaceAll("'", "''").replaceAll("\u0000", "")
     const definition = Effect.runSync(
-      analyze(`SELECT '${quoted}:ignored ? @also_ignored' AS value`),
+      analyze(`SELECT '${quoted}:ignored[] ? @also_ignored' AS value`),
     )
     expect(definition.bindings).toEqual([])
     expect(definition.parameters).toEqual([])
+  },
+)
+
+prop(
+  "row array expansion ignores arbitrary quoted text and preserves tuple offsets",
+  [Schema.String],
+  ([input]) => {
+    const quoted = input.replaceAll("'", "''").replaceAll("\u0000", "")
+    const definition = Effect.runSync(
+      analyze(
+        `INSERT INTO users (name) VALUES :users[] RETURNING '${quoted}:ignored[] ?' AS literal`,
+      ),
+    )
+    const rows = definition.parameters[0]
+    expect(rows?.kind).toBe("rows")
+    if (rows?.kind !== "rows") throw new Error("Expected row array metadata")
+    expect(definition.sql.slice(rows.start, rows.end)).toBe("(?)")
+    expect(definition.bindings).toEqual(["users"])
+    expect(definition.sql).toContain(`'${quoted}:ignored[] ?'`)
   },
 )

@@ -3,7 +3,12 @@ import * as Schema from "effect/Schema"
 // Raw statement metadata is required for inference; Effect's SQL client does not expose columns().
 import { DatabaseSync } from "node:sqlite"
 import parserPackage from "node-sql-parser"
-import type { SqlCardinality, SqlField, SqlQueryDefinition } from "./query-contract.ts"
+import type {
+  SqlCardinality,
+  SqlField,
+  SqlParameter,
+  SqlQueryDefinition,
+} from "./query-contract.ts"
 import { compileSqlBindings } from "./sql-bindings.ts"
 
 type SqlNode = Record<string, unknown>
@@ -141,6 +146,7 @@ function analyzeStatement(db: DatabaseSync, sql: string, source: string): SqlQue
   }
 
   const parameters = new Map<string, SqlField>()
+  let rowParameter: SqlParameter | undefined
   function resolveColumn(expr: SqlNode): SqlField {
     const name = textOf(expr.column)
     const matches = sources.flatMap((table) => {
@@ -313,11 +319,23 @@ function analyzeStatement(db: DatabaseSync, sql: string, source: string): SqlQue
       if (!field) throw new Error(`Unknown INSERT column ${String(name)}`)
       return field
     })
+    if (compiled.rowBinding) {
+      if (new Set(columns.map((field) => field.name)).size !== columns.length)
+        throw new Error("Silt row arrays require distinct INSERT columns")
+      rowParameter = {
+        kind: "rows",
+        name: compiled.rowBinding.name,
+        fields: columns,
+        start: compiled.rowBinding.start,
+        end: compiled.rowBinding.end,
+      }
+    }
     for (const row of arrayOf(values.values)) {
       const entries = arrayOf(nodeOf(row).value)
       if (entries.length !== columns.length)
         throw new Error("INSERT values do not match its columns")
-      entries.forEach((entry, index) => inferExpression(entry, columns[index]))
+      if (!compiled.rowBinding)
+        entries.forEach((entry, index) => inferExpression(entry, columns[index]))
     }
   }
   if (type === "update") {
@@ -356,7 +374,7 @@ function analyzeStatement(db: DatabaseSync, sql: string, source: string): SqlQue
   }
 
   // Preparing catches real SQLite errors and reads result metadata; it never executes the query.
-  const prepared = db.prepare(sql)
+  const prepared = db.prepare(compiled.rowBinding ? compiled.sql : sql)
   const metadata = prepared.columns()
   if (metadata.length !== outputExpressions.length)
     throw new Error("Cannot match the statement's result columns to its inferred types")
@@ -381,7 +399,8 @@ function analyzeStatement(db: DatabaseSync, sql: string, source: string): SqlQue
     return { ...field, nullable: field.nullable || Boolean(bareAggregateColumn), name: column.name }
   })
   for (const name of compiled.bindings)
-    if (!parameters.has(name)) throw new Error(`Cannot infer parameter :${name}`)
+    if (!parameters.has(name) && rowParameter?.name !== name)
+      throw new Error(`Cannot infer parameter :${name}`)
 
   function equalityColumns(value: unknown): ReadonlySet<string> {
     const expr = optionalNode(value)
@@ -426,7 +445,7 @@ function analyzeStatement(db: DatabaseSync, sql: string, source: string): SqlQue
     sql: compiled.sql,
     source,
     bindings: compiled.bindings,
-    parameters: [...parameters.values()],
+    parameters: [...parameters.values(), ...(rowParameter ? [rowParameter] : [])],
     columns,
     cardinality,
   }

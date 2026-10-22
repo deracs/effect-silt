@@ -6,6 +6,7 @@ import * as SqliteClient from "@effect/sql-sqlite-node/SqliteClient"
 import { SqlClient } from "effect/sql/SqlClient"
 import { migrations } from "./migrations.ts"
 import createUser from "./queries/create-user.sql"
+import createManyUsers from "./queries/create-many-users.sql"
 import findUser from "./queries/find-user.sql"
 
 const program = Effect.gen(function* () {
@@ -24,6 +25,13 @@ const program = Effect.gen(function* () {
       const user = Option.getOrNull(yield* findUser({ id: first.id }))
 
       yield* Console.log(user)
+      const users = yield* createManyUsers({
+        users: [
+          { name: "Grace", email: "grace@example.com", password: "example-password" },
+          { name: "Linus", email: null, password: "example-password" },
+        ],
+      })
+      yield* Console.log(users)
     }),
   )
 }).pipe(Effect.provide(SqliteClient.layer({ filename: ":memory:" })))

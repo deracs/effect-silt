@@ -298,6 +298,47 @@ Provide the SQLite layer at the application entrypoint, as in the earlier exampl
 Silt executes each query in the caller's fiber.
 Effect controls nested savepoints, rollback after failure, and rollback after interruption.
 
+## Insert many rows
+
+Use a row array parameter for a variable number of rows in one statement:
+
+```sql
+-- create-many-users.sql
+INSERT INTO users (name, email, password)
+VALUES :users[]
+RETURNING id, name, email;
+```
+
+```ts
+import createManyUsers from "./create-many-users.sql"
+
+const program = createManyUsers({
+  users: [
+    { name: "Ada", email: "ada@example.com", password: "example-password" },
+    { name: "Grace", email: null, password: "example-password" },
+  ],
+})
+```
+
+For this query, the database schema must include the `password TEXT NOT NULL` column.
+Silt infers `users` as `ReadonlyArray<{ readonly name: string; readonly email: string | null; readonly password: string }>`.
+The result retains the inferred fields: `ReadonlyArray<{ readonly id: number; readonly name: string; readonly email: string | null }>`.
+The `.sql` import, editor hover, and Effect `SqlClient` requirement work as usual.
+
+Silt validates every row before execution and binds each value through a placeholder.
+It executes one INSERT in the caller's transaction, without separate queries for each row.
+An empty array returns `[]` without a database statement.
+Without `RETURNING`, the query returns `void` for all array lengths.
+
+The `:users[]` syntax is a Silt extension, not SQLite syntax.
+Use one row array as the entire `VALUES` clause, with an explicit list of distinct columns.
+Record fields follow the schema column names, even when the SQL quotes those names.
+Scalar parameters can also occur in `RETURNING`, with separate names.
+
+The exported `sql` string contains the placeholder template for one row.
+SQLite's limit on bound parameters still applies to the complete batch.
+Scalar arrays for `IN` clauses are not supported.
+
 ## Result types
 
 | SQL statement                                                               | Result               |

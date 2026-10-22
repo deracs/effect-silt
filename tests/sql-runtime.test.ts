@@ -8,6 +8,10 @@ import { SqlClient } from "effect/sql/SqlClient"
 import * as Migrator from "effect/sql/Migrator"
 import { migrations } from "../examples/migrations.ts"
 import createUser from "../examples/queries/create-user.sql"
+import createManyUsers from "../examples/queries/create-many-users.sql"
+import createManyValues from "./queries/create-many-values.sql"
+import createManyPayloads from "./queries/create-many-payloads.sql"
+import createManyWithoutReturning from "./queries/create-many-without-returning.sql"
 import findUser from "../examples/queries/find-user.sql"
 import listUsers from "../examples/queries/list-users.sql"
 import countUsers from "../examples/queries/count-users.sql"
@@ -24,6 +28,133 @@ const initializeDatabase = Effect.gen(function* () {
   yield* Migrator.make({})({ loader: migrations })
   return yield* SqlClient
 })
+
+it.effect("inserts variable-length batches through the same imported query", () =>
+  Effect.gen(function* () {
+    yield* initializeDatabase
+    expect(yield* countUsers()).toEqual({ total: 0 })
+    let inserted = 0
+    for (const size of [1, 2, 5]) {
+      const users = Array.from({ length: size }, (_, index) => ({
+        name: `User ${inserted + index}: '); DROP TABLE users; -- ? :users[]`,
+        email: null,
+        password: "test-password",
+      }))
+      const pending = createManyUsers({ users })
+      expect(yield* countUsers()).toEqual({ total: inserted })
+      const rows = yield* pending
+      expect(rows).toEqual(
+        users.map((user, index) => ({ id: inserted + index + 1, name: user.name, email: null })),
+      )
+      inserted += size
+    }
+    expect(yield* countUsers()).toEqual({ total: 8 })
+  }).pipe(Effect.provide(database)),
+)
+
+it.effect("returns empty batch results without a database statement", () =>
+  Effect.gen(function* () {
+    // This database has no tables, so any attempted INSERT fails.
+    expect(yield* createManyUsers({ users: [] })).toEqual([])
+    expect(yield* createManyWithoutReturning({ users: [] })).toBeUndefined()
+  }).pipe(Effect.provide(database)),
+)
+
+it.effect.each([
+  undefined,
+  null,
+  {},
+  "secret input",
+  [null],
+  [undefined],
+  [
+    { name: "valid", email: null, password: "test-password" },
+    { name: "invalid", email: null },
+  ],
+  [{ name: null, email: null, password: "test-password" }],
+  [{ name: "invalid", password: "test-password" }],
+])("validates the entire row array before a write: %j", (users) =>
+  Effect.gen(function* () {
+    yield* initializeDatabase
+    // @ts-expect-error -- Untyped callers can supply malformed arrays and rows.
+    const error = yield* createManyUsers({ users }).pipe(Effect.flip)
+    expect(error._tag).toBe("SqlInputError")
+    expect(String(error)).not.toContain("secret input")
+    expect(yield* countUsers()).toEqual({ total: 0 })
+  }).pipe(Effect.provide(database)),
+)
+
+it.effect("keeps a bulk INSERT atomic when a later row violates a constraint", () =>
+  Effect.gen(function* () {
+    yield* initializeDatabase
+    const error = yield* createManyUsers({
+      users: [
+        { name: "first", email: "duplicate@example.com", password: "test-password" },
+        { name: "second", email: "duplicate@example.com", password: "test-password" },
+      ],
+    }).pipe(Effect.flip)
+    expect(error._tag).toBe("SqlError")
+    expect(yield* countUsers()).toEqual({ total: 0 })
+    expect(
+      yield* createManyWithoutReturning({ users: [{ name: "Ada", password: "test-password" }] }),
+    ).toBeUndefined()
+    expect(yield* countUsers()).toEqual({ total: 1 })
+  }).pipe(Effect.provide(database)),
+)
+
+it.effect("rolls back an imported bulk insert with its caller's transaction", () =>
+  Effect.gen(function* () {
+    const sql = yield* initializeDatabase
+    yield* sql
+      .withTransaction(
+        Effect.gen(function* () {
+          yield* createManyUsers({
+            users: [
+              { name: "Ada", email: null, password: "test-password" },
+              { name: "Grace", email: null, password: "test-password" },
+            ],
+          })
+          return yield* Effect.fail("cancelled")
+        }),
+      )
+      .pipe(Effect.flip)
+    expect(yield* countUsers()).toEqual({ total: 0 })
+  }).pipe(Effect.provide(database)),
+)
+
+it.effect("preserves row codecs, scalar binding order, and quoted parameter-like text", () =>
+  Effect.gen(function* () {
+    yield* initializeDatabase
+    const users = [
+      {
+        name: "Ada",
+        email: null,
+        password: "test-password",
+        active: true,
+        external_id: 9007199254740993n,
+      },
+      { name: "Grace", email: null, password: "test-password", active: false, external_id: 0n },
+    ]
+    expect(yield* createManyValues({ users, label: "batch" })).toEqual(
+      users.map((user, index) => ({
+        id: index + 1,
+        name: user.name,
+        email: null,
+        active: user.active,
+        external_id: user.external_id,
+        label: "batch",
+        marker: "? :ignored[]",
+      })),
+    )
+    const payloads = [
+      { body: { nested: [true, null, "hello"] }, data: new Uint8Array([0, 255]) },
+      { body: [1, "two"], data: new Uint8Array([]) },
+    ]
+    expect(yield* createManyPayloads({ payloads })).toEqual(
+      payloads.map((payload, index) => ({ id: index + 1, body: payload.body, data: payload.data })),
+    )
+  }).pipe(Effect.provide(database)),
+)
 
 it.effect("runs imported queries lazily, decodes values, and supports parameterless queries", () =>
   Effect.gen(function* () {

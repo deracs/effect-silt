@@ -11,6 +11,10 @@ import type { SqlError } from "effect/sql/SqlError"
 import { runMigrationsWithSnapshot, type SchemaSnapshotError } from "effect-silt/migrations"
 import findUser from "../examples/queries/find-user.sql"
 import createUser from "../examples/queries/create-user.sql"
+import createManyUsers, {
+  type Params as CreateManyUsersParams,
+} from "../examples/queries/create-many-users.sql"
+import createManyWithoutReturning from "./queries/create-many-without-returning.sql"
 import listUsers from "../examples/queries/list-users.sql"
 import countUsers from "../examples/queries/count-users.sql"
 import userPosts from "../examples/queries/user-posts.sql"
@@ -41,6 +45,31 @@ expectTypeOf<Effect.Success<ReturnType<typeof userPosts>>>().toEqualTypeOf<
   ReadonlyArray<{ readonly id: number; readonly name: string; readonly title: string | null }>
 >()
 expectTypeOf<Effect.Success<ReturnType<typeof renameUser>>>().toEqualTypeOf<void>()
+expectTypeOf<CreateManyUsersParams>().toEqualTypeOf<{
+  readonly users: ReadonlyArray<{
+    readonly name: string
+    readonly email: string | null
+    readonly password: string
+  }>
+}>()
+const batch = createManyUsers({
+  users: [{ name: "Ada", email: null, password: "test-password" }],
+} as const)
+createManyUsers({ users: [] })
+expectTypeOf<Effect.Success<typeof batch>>().toEqualTypeOf<
+  ReadonlyArray<{ readonly id: number; readonly name: string; readonly email: string | null }>
+>()
+expectTypeOf<Effect.Error<typeof batch>>().toEqualTypeOf<SqlQueryError>()
+expectTypeOf<Effect.Services<typeof batch>>().toEqualTypeOf<SqlClient>()
+expectTypeOf<Effect.Success<ReturnType<typeof createManyWithoutReturning>>>().toEqualTypeOf<void>()
+// @ts-expect-error -- A row array is required.
+createManyUsers()
+// @ts-expect-error -- Every row requires the migrated password column.
+createManyUsers({ users: [{ name: "Ada", email: null }] })
+// @ts-expect-error -- Row fields retain their inferred scalar types.
+createManyUsers({ users: [{ name: 1, email: null, password: "test-password" }] })
+// @ts-expect-error -- Row arrays require records, not positional tuples.
+createManyUsers({ users: [["Ada", null, "test-password"]] })
 
 // @ts-expect-error -- SQL infers an INTEGER parameter, so strings must fail type checking.
 findUser({ id: "1" })

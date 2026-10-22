@@ -27,6 +27,23 @@ export const SqlField = Schema.Struct({
 /** Database field metadata shared by the compiler and the runtime decoder. */
 export interface SqlField extends Schema.Schema.Type<typeof SqlField> {}
 
+const sqlOffsetSchema = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+
+/** A row array expands one VALUES tuple; offsets are UTF-16 positions in the compiled SQL. */
+export const SqlRowParameter = Schema.Struct({
+  name: Schema.String,
+  kind: Schema.Literal("rows"),
+  fields: Schema.Array(SqlField),
+  start: sqlOffsetSchema,
+  end: sqlOffsetSchema,
+})
+
+/** Parameters are scalar values or arrays of records inferred from INSERT columns. */
+export const SqlParameter = Schema.Union([SqlField, SqlRowParameter])
+
+/** Shared parameter metadata preserves row fields through compilation and execution. */
+export type SqlParameter = Schema.Schema.Type<typeof SqlParameter>
+
 /** Cardinality is conservative: only a proof permits a single result. */
 export const SqlCardinality = Schema.Literals(["many", "maybeOne", "one", "none"])
 
@@ -37,7 +54,7 @@ export type SqlCardinality = Schema.Schema.Type<typeof SqlCardinality>
 export const SqlQueryDefinition = Schema.Struct({
   sql: Schema.String,
   source: Schema.String,
-  parameters: Schema.Array(SqlField),
+  parameters: Schema.Array(SqlParameter),
   bindings: Schema.Array(Schema.String),
   columns: Schema.Array(SqlField),
   cardinality: SqlCardinality,

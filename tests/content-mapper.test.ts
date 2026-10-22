@@ -90,6 +90,43 @@ it.live("runs the real TypeScript 7.1 content mapper and checks inferred caller 
   }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
 )
 
+it.live("infers row array imports and refreshes their fields after a schema change", () =>
+  Effect.gen(function* () {
+    const { directory, fs, path, typecheck } = yield* compilerProject
+    yield* fs.writeFileString(
+      path.join(directory, "create.sql"),
+      "INSERT INTO users (name) VALUES :users[] RETURNING id, name;",
+    )
+    yield* fs.writeFileString(
+      path.join(directory, "main.ts"),
+      'import create from "./create.sql"; create({ users: [{ name: "Ada" }] }); create({ users: [] });\n',
+    )
+    const good = yield* typecheck()
+    expect(good.output).toBe("")
+    expect(good.status).toBe(0)
+    yield* fs.writeFileString(
+      path.join(directory, "main.ts"),
+      'import create from "./create.sql"; create({ users: [{ name: 123 }] });\n',
+    )
+    const bad = yield* typecheck()
+    expect(bad.status).not.toBe(0)
+    expect(bad.output).toContain("TS2322")
+    yield* fs.writeFileString(
+      path.join(directory, "schema.sql"),
+      "CREATE TABLE users (id INTEGER PRIMARY KEY, name INTEGER NOT NULL);",
+    )
+    expect((yield* typecheck()).status).toBe(0)
+    yield* fs.writeFileString(
+      path.join(directory, "create.sql"),
+      "INSERT INTO users (name) VALUES (:users[]) RETURNING id;",
+    )
+    const invalidSql = yield* typecheck()
+    expect(invalidSql.status).not.toBe(0)
+    expect(invalidSql.output).toContain("create.sql")
+    expect(invalidSql.output).toContain("Silt row arrays require")
+  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer)),
+)
+
 it.live("invalidates inference after a saved schema change and places diagnostics in SQL", () =>
   Effect.gen(function* () {
     const { directory, fs, path, typecheck } = yield* compilerProject

@@ -40,14 +40,39 @@ function fieldSchema(field: SqlField): Schema.ConstraintDecoder<unknown> {
   return field.nullable ? Schema.NullOr(scalar) : scalar
 }
 
+function encodeSqlValue(field: SqlField, value: unknown): unknown {
+  return field.kind === "boolean" && value !== null
+    ? Number(value)
+    : field.kind === "json" && value !== null
+      ? JSON.stringify(value)
+      : value
+}
+
 /** Build a query from compiler metadata; applications normally import a .sql file instead. */
 export function defineSqlQuery<Params, Row, C extends SqlCardinality>(
   definition: SqlQueryDefinition & { readonly cardinality: C },
 ): SqlQuery<Params, Row, C> {
-  const inputParsers = definition.parameters.map((field) => ({
-    field,
-    parse: Schema.decodeUnknownEffect(fieldSchema(field)),
-  }))
+  const inputParsers = definition.parameters.map((field) =>
+    field.kind === "rows"
+      ? {
+          kind: "rows" as const,
+          field,
+          parse: Schema.decodeUnknownEffect(
+            Schema.Array(
+              Schema.Struct(
+                Object.fromEntries(
+                  field.fields.map((column) => [column.name, fieldSchema(column)]),
+                ),
+              ),
+            ),
+          ),
+        }
+      : {
+          kind: "scalar" as const,
+          field,
+          parse: Schema.decodeUnknownEffect(fieldSchema(field)),
+        },
+  )
   const outputParsers = definition.columns.map((field) => ({
     field,
     parse: Schema.decodeUnknownEffect(fieldSchema(field)),
@@ -62,26 +87,39 @@ export function defineSqlQuery<Params, Row, C extends SqlCardinality>(
         new SqlInputError({ source: definition.source, field: "parameters" }),
       )
     }
-    const values = new Map<string, unknown>()
-    for (const { field, parse } of inputParsers) {
-      const raw = Reflect.get(input, field.name)
-      const value = yield* parse(raw).pipe(
-        Effect.mapError(() => new SqlInputError({ source: definition.source, field: field.name })),
-      )
-      values.set(
-        field.name,
-        field.kind === "boolean" && value !== null
-          ? Number(value)
-          : field.kind === "json" && value !== null
-            ? JSON.stringify(value)
-            : value,
-      )
+    const values = new Map<string, ReadonlyArray<unknown>>()
+    let statementSql = definition.sql
+    let emptyBatch = false
+    for (const parser of inputParsers) {
+      const raw = Reflect.get(input, parser.field.name)
+      const inputError = () =>
+        new SqlInputError({ source: definition.source, field: parser.field.name })
+      if (parser.kind === "rows") {
+        const rows = yield* parser.parse(raw).pipe(Effect.mapError(inputError))
+        const field = parser.field
+        values.set(
+          field.name,
+          rows.flatMap((row) =>
+            field.fields.map((column) => encodeSqlValue(column, row[column.name])),
+          ),
+        )
+        emptyBatch = rows.length === 0
+        const tuple = definition.sql.slice(field.start, field.end)
+        statementSql =
+          definition.sql.slice(0, field.start) +
+          rows.map(() => tuple).join(", ") +
+          definition.sql.slice(field.end)
+      } else {
+        const value = yield* parser.parse(raw).pipe(Effect.mapError(inputError))
+        values.set(parser.field.name, [encodeSqlValue(parser.field, value)])
+      }
     }
+    if (emptyBatch) return definition.cardinality === "none" ? undefined : []
     const sqlClient = yield* SqlClient
     const rows = yield* sqlClient
       .unsafe<Record<string, unknown>>(
-        definition.sql,
-        definition.bindings.map((name) => values.get(name)),
+        statementSql,
+        definition.bindings.flatMap((name) => values.get(name) ?? []),
       )
       .withoutTransform.pipe(Effect.provideService(SafeIntegers, true))
     if (

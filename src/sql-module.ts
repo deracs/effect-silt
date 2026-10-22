@@ -3,7 +3,7 @@ import * as FileSystem from "effect/FileSystem"
 import * as Path from "effect/Path"
 import { analyzeSqlQuery, type SqlAnalysisError } from "./sql-analyzer.ts"
 import { SiltConfigError, loadSiltProject } from "./silt-project.ts"
-import type { SqlField, SqlQueryDefinition } from "./query-contract.ts"
+import type { SqlField, SqlParameter, SqlQueryDefinition } from "./query-contract.ts"
 
 function typeOfField(field: SqlField): string {
   const type = {
@@ -19,9 +19,9 @@ function typeOfField(field: SqlField): string {
   return field.nullable && type !== "null" ? `${type} | null` : type
 }
 
-function objectType(fields: ReadonlyArray<SqlField>): string {
+function objectType(fields: ReadonlyArray<SqlParameter>): string {
   return fields.length
-    ? `{ ${fields.map((field) => `readonly ${JSON.stringify(field.name)}: ${typeOfField(field)}`).join("; ")} }`
+    ? `{ ${fields.map((field) => `readonly ${JSON.stringify(field.name)}: ${field.kind === "rows" ? `ReadonlyArray<${objectType(field.fields)}>` : typeOfField(field)}`).join("; ")} }`
     : "Record<string, never>"
 }
 
