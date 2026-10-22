@@ -22,8 +22,8 @@ Silt derives parameter types, result fields, nullability, and cardinality from S
 The TypeScript content mapper supplies types for `.sql` imports and shows SQL errors in the source file.
 Each query returns an Effect that uses the caller's `SqlClient`, transaction, scope, and trace context.
 
-**Status:** early development, SQLite only. The repository is private and the package is unpublished.
-The API and compiler requirements can change before the first public release.
+**Status:** early development, SQLite only. The repository is public and the npm package is unpublished.
+The API and compiler requirements can change before the first npm release.
 
 ## What Silt provides
 
@@ -48,7 +48,6 @@ pnpm install --frozen-lockfile
 pnpm verify
 ```
 
-The private repository requires GitHub access.
 The verification command checks format, types, lint, runtime behavior, SQL inference, and the Node example.
 The example creates an in-memory SQLite database and executes the queries in [`examples/`](./examples).
 
@@ -313,14 +312,14 @@ The compiler checks SQL inference with `--runExternalCode`, with the negative ty
 
 For a change, describe the behavior and include tests through the relevant public interface.
 Use the SQLite, compiler, and runtime fixtures where possible.
-Report bugs through [GitHub issues](https://github.com/deracs/effect-silt/issues) once repository access is available.
+Report bugs through [GitHub issues](https://github.com/deracs/effect-silt/issues).
 Include the SQL, schema, compiler version, and expected result.
 
 ## Public release preparation
 
 The project is not ready for a public npm release.
 The package manifest currently sets `private: true` to prevent accidental publication.
-[The release checklist](./docs/RELEASING.md) covers public repository access, package metadata, archive checks, and the first npm release.
+[The release checklist](./docs/RELEASING.md) covers package metadata, archive checks, and the first npm release.
 
 ## License and acknowledgments
 

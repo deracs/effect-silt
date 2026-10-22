@@ -1,6 +1,6 @@
 # Public release checklist
 
-The repository remains private until the project is ready for public use.
+The repository is public. The npm package remains unpublished while development continues.
 This document describes future release work. It does not schedule or authorize a release.
 
 ## Complete the release candidate
@@ -40,13 +40,12 @@ Use only the documented runtime and development dependencies in that project.
 Verify the README setup procedure, compiler diagnostics, editor hover, Node preload, and Vite plugin.
 Verify that the consumer does not require Silt's development dependencies or local source checkout.
 
-## Open the repository
+## Review the public repository
 
 1. Review the full Git history and files for private material.
 2. Confirm the license, attribution, issue links, and contribution instructions.
 3. Configure CI to run the verification command and archive checks.
-4. Change the GitHub repository visibility to public when the owner approves the release.
-5. Replace the private and unpublished status text in the README with the actual release status.
+4. Replace the unpublished status text in the README with the actual npm release status.
 
 ## Publish the first version
 
